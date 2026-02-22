@@ -1,0 +1,68 @@
+name: capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Capture duration in minutes"
+        required: false
+        default: "60"
+      interval_seconds:
+        description: "Interval between captures in seconds"
+        required: false
+        default: "30"
+      target_url:
+        description: "URL to capture"
+        required: false
+        default: "https://pump.studio/market"
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Capture screenshots
+        run: npm run watch
+        env:
+          TARGET_URL: ${{ inputs.target_url || 'https://pump.studio/market' }}
+          INTERVAL_MS: ${{ fromJSON(inputs.interval_seconds || '30') * 1000 }}
+          DURATION_MS: ${{ fromJSON(inputs.duration_minutes || '60') * 60000 }}
+
+      - name: Count frames
+        run: echo "frames=$(ls screenshots/*.png 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT
+        id: count
+
+      - name: Assemble GIF
+        if: steps.count.outputs.frames >= 2
+        run: npm run gif -- --half
+
+      - name: Upload frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frames-${{ github.run_id }}
+          path: screenshots/*.png
+          retention-days: 7
+
+      - name: Upload GIF
+        if: steps.count.outputs.frames >= 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: timelapse-${{ github.run_id }}
+          path: screenshots/*.gif
+          retention-days: 30

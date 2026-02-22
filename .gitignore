@@ -1,0 +1,5 @@
+node_modules/
+dist/
+screenshots/*.png
+screenshots/*.gif
+!screenshots/.gitkeep

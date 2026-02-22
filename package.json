@@ -1,0 +1,16 @@
+{
+  "name": "intern",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "snap": "tsx src/snap.ts",
+    "watch": "tsx src/watch.ts",
+    "gif": "tsx src/gif.ts"
+  },
+  "dependencies": {
+    "puppeteer": "^24.4.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -10,7 +10,7 @@ on:
       interval_seconds:
         description: "Interval between captures in seconds"
         required: false
-        default: "30"
+        default: "300"
       target_url:
         description: "URL to capture"
         required: false
@@ -40,7 +40,7 @@ jobs:
         run: npm run watch
         env:
           TARGET_URL: ${{ inputs.target_url || 'https://pump.studio/market' }}
-          INTERVAL_S: ${{ inputs.interval_seconds || '30' }}
+          INTERVAL_S: ${{ inputs.interval_seconds || '300' }}
           DURATION_M: ${{ inputs.duration_minutes || '60' }}
 
       - name: Count frames

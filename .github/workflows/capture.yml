@@ -40,8 +40,8 @@ jobs:
         run: npm run watch
         env:
           TARGET_URL: ${{ inputs.target_url || 'https://pump.studio/market' }}
-          INTERVAL_MS: ${{ fromJSON(inputs.interval_seconds || '30') * 1000 }}
-          DURATION_MS: ${{ fromJSON(inputs.duration_minutes || '60') * 60000 }}
+          INTERVAL_S: ${{ inputs.interval_seconds || '30' }}
+          DURATION_M: ${{ inputs.duration_minutes || '60' }}
 
       - name: Count frames
         run: echo "frames=$(ls screenshots/*.png 2>/dev/null | wc -l)" >> $GITHUB_OUTPUT

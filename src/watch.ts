@@ -6,8 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCREENSHOTS_DIR = path.resolve(__dirname, "../screenshots");
 
 const URL = process.env.TARGET_URL || process.argv[2] || "https://pump.studio/market";
-const INTERVAL_MS = Number(process.env.INTERVAL_MS) || 30_000;
-const DURATION_MS = Number(process.env.DURATION_MS) || 0; // 0 = infinite
+const INTERVAL_MS = Number(process.env.INTERVAL_MS) || Number(process.env.INTERVAL_S || 0) * 1000 || 30_000;
+const DURATION_MS = Number(process.env.DURATION_MS) || Number(process.env.DURATION_M || 0) * 60_000 || 0; // 0 = infinite
 const WIDTH = 1600;
 const HEIGHT = 929;
 

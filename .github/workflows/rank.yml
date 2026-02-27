@@ -4,21 +4,29 @@ on:
   workflow_dispatch:
     inputs:
       count:
-        description: "Tokens to analyze per run"
+        description: "Tokens per tab per cycle"
         required: false
-        default: "5"
-      tab:
-        description: "Market tab (all, live, new, graduated)"
+        default: "20"
+      tabs:
+        description: "Comma-separated tabs (all,live,new,graduated)"
         required: false
-        default: "all"
+        default: "all,live,new,graduated"
+      runtime:
+        description: "Max runtime in minutes"
+        required: false
+        default: "55"
   schedule:
-    # 10 runs per day — every ~2.4 hours
-    - cron: "0 0,2,5,7,10,12,14,17,19,22 * * *"
+    # Every hour, on the hour — continuous coverage
+    - cron: "0 * * * *"
+
+concurrency:
+  group: rank
+  cancel-in-progress: false
 
 jobs:
   rank:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +38,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run quant analysis
+      - name: Run continuous quant analysis
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY }}
-          RANK_COUNT: ${{ inputs.count || '5' }}
-          RANK_TAB: ${{ inputs.tab || 'all' }}
-          COOLDOWN_MS: "65000"
+          RANK_COUNT: ${{ inputs.count || '20' }}
+          TABS: ${{ inputs.tabs || 'all,live,new,graduated' }}
+          COOLDOWN_MS: "7000"
+          MAX_RUNTIME_MS: "3300000"

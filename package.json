@@ -7,7 +7,8 @@
     "snap": "tsx src/snap.ts",
     "watch": "tsx src/watch.ts",
     "gif": "tsx src/gif.ts",
-    "rank": "tsx src/rank.ts"
+    "rank": "tsx src/rank.ts",
+    "hackathon": "tsx src/hackathon.ts"
   },
   "dependencies": {
     "puppeteer": "^24.4.0",

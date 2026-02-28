@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  rank:
+  agent-1:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -38,11 +38,34 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run continuous quant analysis
+      - name: Run agent 1
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY }}
           RANK_COUNT: ${{ inputs.count || '50' }}
-          TABS: ${{ inputs.tabs || 'all,live,new,graduated' }}
+          TABS: "all,live"
+          COOLDOWN_MS: "6000"
+          MAX_RUNTIME_MS: "3300000"
+
+  agent-2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run agent 2
+        run: npm run rank
+        env:
+          PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY_2 }}
+          RANK_COUNT: ${{ inputs.count || '50' }}
+          TABS: "new,graduated"
           COOLDOWN_MS: "6000"
           MAX_RUNTIME_MS: "3300000"

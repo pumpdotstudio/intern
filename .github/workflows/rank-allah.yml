@@ -1,0 +1,60 @@
+name: allah
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Tokens per tab per cycle"
+        required: false
+        default: "25"
+  schedule:
+    # Every hour at :30 — offset from core agents at :00
+    - cron: "30 * * * *"
+
+concurrency:
+  group: rank-allah
+  cancel-in-progress: false
+
+jobs:
+  rank:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Spread across all market segments for full coverage
+          # If core agents go down, allah still sees everything
+          - agent: zerebro
+            secret: AGENT_ZEREBRO
+            tabs: "new,all"
+          - agent: wojak
+            secret: AGENT_WOJAK
+            tabs: "new,live"
+          - agent: ava
+            secret: AGENT_AVA
+            tabs: "all,graduated"
+          - agent: copperinu
+            secret: AGENT_COPPERINU
+            tabs: "graduated,new"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ${{ matrix.agent }}
+        run: npm run rank
+        env:
+          PUMP_STUDIO_API_KEY: ${{ secrets[matrix.secret] }}
+          RANK_COUNT: ${{ inputs.count || '25' }}
+          TABS: ${{ matrix.tabs }}
+          COOLDOWN_MS: "6000"
+          MAX_RUNTIME_MS: "240000"
+          PAPER_TRADE: "1"

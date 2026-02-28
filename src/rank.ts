@@ -16,6 +16,7 @@
 
 import { PumpStudioClient } from "./client.js";
 import { analyze } from "./analyzer.js";
+import { evaluateTrade } from "./trader.js";
 import type { DataPoint, MarketToken } from "./types.js";
 
 const API_KEY = process.env.PUMP_STUDIO_API_KEY;
@@ -29,6 +30,7 @@ const COOLDOWN_MS = Number(process.env.COOLDOWN_MS) || 6_000;
 const MAX_RUNTIME_MS = Number(process.env.MAX_RUNTIME_MS) || 55 * 60 * 1000;
 const TABS_ENV = process.env.TABS || "all,live,new,graduated";
 const TABS = TABS_ENV.split(",").map((t) => t.trim()) as Array<"all" | "live" | "new" | "graduated">;
+const PAPER_TRADE = process.env.PAPER_TRADE !== "0";
 
 const client = new PumpStudioClient(API_KEY);
 const startTime = Date.now();
@@ -68,10 +70,11 @@ async function safeFetchDP(mint: string): Promise<DataPoint | null> {
   }
 }
 
-async function rankTab(tab: string, count: number, cycle: number): Promise<{ submitted: number; xp: number; errors: number }> {
+async function rankTab(tab: string, count: number, cycle: number): Promise<{ submitted: number; xp: number; errors: number; trades: number }> {
   let submitted = 0;
   let xp = 0;
   let errors = 0;
+  let trades = 0;
 
   console.log(`\n→ [${elapsed()}] CYCLE ${cycle} — tab "${tab}" — fetching ${count} tokens...`);
 
@@ -153,6 +156,32 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
       } else {
         console.log(`${label} ✗ ${token.symbol} — ${submission.error}`);
       }
+
+      /* Paper trade evaluation — only on pre-bonded tokens */
+      if (PAPER_TRADE && dp && !dp.bondingComplete) {
+        const signal = evaluateTrade(dp, result);
+        if (signal.shouldTrade) {
+          try {
+            const trade = await client.paperTrade({
+              mint: token.mint,
+              solAmount: signal.solAmount,
+              strategy: signal.strategy,
+              riskFactors: signal.riskFactors,
+            });
+            if (trade.ok && trade.data) {
+              trades++;
+              console.log(
+                `${label} 📈 TRADE ${signal.strategy.toUpperCase()} ${signal.solAmount}SOL → ${token.symbol}` +
+                ` @ $${trade.data.entryPriceUsd.toFixed(8)} (${signal.reason})`
+              );
+            } else {
+              console.log(`${label} 📊 SKIP  ${token.symbol} — ${trade.error ?? "trade rejected"}`);
+            }
+          } catch (err: any) {
+            console.log(`${label} 📊 SKIP  ${token.symbol} — ${err.message}`);
+          }
+        }
+      }
     } catch (err: any) {
       errors++;
       console.log(`${label} ✗ ${token.symbol ?? token.mint.slice(0, 8)} — ${err.message}`);
@@ -166,20 +195,33 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
     }
   }
 
-  return { submitted, xp, errors };
+  return { submitted, xp, errors, trades };
 }
 
 async function run() {
   console.log(`☕ intern — continuous quant ranker (pipelined)`);
   console.log(`   tabs: [${TABS.join(", ")}]`);
   console.log(`   tokens/tab: ${RANK_COUNT} | cooldown: ${COOLDOWN_MS / 1000}s`);
+  console.log(`   paper trading: ${PAPER_TRADE ? "ON" : "OFF"}`);
   console.log(`   max runtime: ${MAX_RUNTIME_MS / 60_000}m`);
   console.log(`   theoretical max: ${Math.floor((MAX_RUNTIME_MS / 1000 / (COOLDOWN_MS / 1000)) * 24)}/day`);
   console.log(`   started: ${new Date().toISOString()}\n`);
 
+  /* Print portfolio status if paper trading is on */
+  if (PAPER_TRADE) {
+    try {
+      const pf = await client.paperPortfolio();
+      if (pf.ok && pf.data) {
+        const p = pf.data.portfolio;
+        console.log(`   portfolio: ${p.balanceSol.toFixed(1)} SOL | PnL ${(p.totalPnlPct * 100).toFixed(1)}% | W/L ${p.winCount}/${p.lossCount} | ${p.openPositionCount} open\n`);
+      }
+    } catch { /* portfolio may not exist yet */ }
+  }
+
   let totalSubmitted = 0;
   let totalXp = 0;
   let totalErrors = 0;
+  let totalTrades = 0;
   let cycle = 0;
 
   while (!shouldStop()) {
@@ -192,11 +234,12 @@ async function run() {
       totalSubmitted += result.submitted;
       totalXp += result.xp;
       totalErrors += result.errors;
+      totalTrades += result.trades;
     }
 
     if (!shouldStop()) {
       const rate = totalSubmitted / ((Date.now() - startTime) / 60_000);
-      console.log(`\n─── cycle ${cycle} | ${totalSubmitted} submitted | +${totalXp} XP | ${rate.toFixed(1)}/min | ${elapsed()} ───`);
+      console.log(`\n─── cycle ${cycle} | ${totalSubmitted} ranked | ${totalTrades} trades | +${totalXp} XP | ${rate.toFixed(1)}/min | ${elapsed()} ───`);
       console.log(`    pausing 10s before next cycle...\n`);
       await sleep(10_000);
     }
@@ -210,7 +253,8 @@ async function run() {
   console.log(`  ☕ intern — session complete`);
   console.log(`  runtime:    ${elapsed()}`);
   console.log(`  cycles:     ${cycle}`);
-  console.log(`  submitted:  ${totalSubmitted}`);
+  console.log(`  ranked:     ${totalSubmitted}`);
+  console.log(`  trades:     ${totalTrades}`);
   console.log(`  XP earned:  +${totalXp}`);
   console.log(`  errors:     ${totalErrors}`);
   console.log(`  rate:       ${rate.toFixed(1)}/min`);

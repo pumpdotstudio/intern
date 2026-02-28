@@ -133,3 +133,73 @@ export interface MarketToken {
   is_currently_live?: boolean;
   complete?: boolean;
 }
+
+/* ---- Paper Trading ---- */
+
+export type PaperStrategy = "sniper" | "momentum" | "graduation" | "scalper" | "degen";
+
+export interface PaperTradePayload {
+  mint: string;
+  solAmount: number;
+  strategy?: PaperStrategy;
+  takeProfitPct?: number;
+  drawdownPct?: number;
+  stopLossPct?: number;
+  timeoutMs?: number;
+  riskLevel?: RiskLevel;
+  riskFactors?: RiskFactor[];
+}
+
+export interface PaperTradeResult {
+  ok: boolean;
+  data?: {
+    positionId: string;
+    entryPriceUsd: number;
+    rawPriceUsd: number;
+    slippagePct: number;
+    tokenAmount: number;
+    entrySolAmount: number;
+    exitStrategy: {
+      name: string;
+      takeProfitPct: number;
+      drawdownPct: number;
+      stopLossPct: number;
+      timeoutMs: number;
+      riskLevel: string;
+    };
+    expiresAt: number;
+    balanceRemaining: number;
+  };
+  error?: string;
+}
+
+export interface PaperPortfolioResult {
+  ok: boolean;
+  data?: {
+    portfolio: {
+      balanceSol: number;
+      totalPnlPct: number;
+      totalTrades: number;
+      winCount: number;
+      lossCount: number;
+      winRate: number;
+      bestTradePct: number;
+      worstTradePct: number;
+      currentStreak: number;
+      openPositionCount: number;
+    };
+    openPositions: Array<{
+      positionId?: string;
+      mint: string;
+      tokenSymbol?: string;
+      entryPriceUsd: number;
+      currentPriceUsd: number;
+      unrealizedPnlPct: number;
+      entrySolAmount: number;
+      strategyName?: string;
+      expiresAt: number;
+      openedAt: number;
+    }>;
+  };
+  error?: string;
+}

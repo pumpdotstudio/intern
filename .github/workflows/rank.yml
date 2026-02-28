@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run agent 1
+      - name: Run agent 1 (blade)
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY }}
@@ -46,6 +46,7 @@ jobs:
           TABS: "all,live"
           COOLDOWN_MS: "6000"
           MAX_RUNTIME_MS: "3300000"
+          PAPER_TRADE: "1"
 
   agent-2:
     runs-on: ubuntu-latest
@@ -61,7 +62,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run agent 2
+      - name: Run agent 2 (intern)
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY_2 }}
@@ -69,3 +70,4 @@ jobs:
           TABS: "new,graduated"
           COOLDOWN_MS: "6000"
           MAX_RUNTIME_MS: "3300000"
+          PAPER_TRADE: "1"

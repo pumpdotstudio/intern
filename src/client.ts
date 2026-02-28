@@ -7,6 +7,9 @@ import type {
   MarketToken,
   SubmissionPayload,
   SubmitResult,
+  PaperTradePayload,
+  PaperTradeResult,
+  PaperPortfolioResult,
 } from "./types.js";
 
 const API_BASE = process.env.PUMP_API_BASE || "https://api.pump.studio";
@@ -70,5 +73,13 @@ export class PumpStudioClient {
 
   async submitAnalysis(payload: SubmissionPayload): Promise<SubmitResult> {
     return this.request<SubmitResult>("POST", "/api/v1/analysis/submit", payload);
+  }
+
+  async paperTrade(payload: PaperTradePayload): Promise<PaperTradeResult> {
+    return this.request<PaperTradeResult>("POST", "/api/v1/paper/trade", payload);
+  }
+
+  async paperPortfolio(): Promise<PaperPortfolioResult> {
+    return this.request<PaperPortfolioResult>("GET", "/api/v1/paper/portfolio");
   }
 }

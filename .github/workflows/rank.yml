@@ -28,27 +28,39 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ── Core agents (broad market) ──
+          # ── Core agents (full speed ~13K/day each) ──
           - agent: blade
             secret: PUMP_STUDIO_API_KEY
             tabs: "all,live"
+            runtime: "3300000"
+            count: "50"
           - agent: intern
             secret: PUMP_STUDIO_API_KEY_2
             tabs: "new,graduated"
+            runtime: "3300000"
+            count: "50"
 
-          # ── Allah fleet (pre-bonded focus) ──
+          # ── Allah fleet (~1K/day each, 4 min runs) ──
           - agent: zerebro
             secret: AGENT_ZEREBRO
             tabs: "new,all"
+            runtime: "240000"
+            count: "25"
           - agent: wojak
             secret: AGENT_WOJAK
             tabs: "new,live"
+            runtime: "240000"
+            count: "25"
           - agent: ava
             secret: AGENT_AVA
             tabs: "new,graduated"
+            runtime: "240000"
+            count: "25"
           - agent: copperinu
             secret: AGENT_COPPERINU
             tabs: "all,graduated"
+            runtime: "240000"
+            count: "25"
 
     steps:
       - uses: actions/checkout@v4
@@ -64,8 +76,8 @@ jobs:
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets[matrix.secret] }}
-          RANK_COUNT: ${{ inputs.count || '50' }}
+          RANK_COUNT: ${{ matrix.count }}
           TABS: ${{ matrix.tabs }}
           COOLDOWN_MS: "6000"
-          MAX_RUNTIME_MS: "3300000"
+          MAX_RUNTIME_MS: ${{ matrix.runtime }}
           PAPER_TRADE: "1"

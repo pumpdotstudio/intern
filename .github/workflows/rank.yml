@@ -6,7 +6,7 @@ on:
       count:
         description: "Tokens per tab per cycle"
         required: false
-        default: "20"
+        default: "50"
       tabs:
         description: "Comma-separated tabs (all,live,new,graduated)"
         required: false
@@ -42,7 +42,7 @@ jobs:
         run: npm run rank
         env:
           PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY }}
-          RANK_COUNT: ${{ inputs.count || '20' }}
+          RANK_COUNT: ${{ inputs.count || '50' }}
           TABS: ${{ inputs.tabs || 'all,live,new,graduated' }}
-          COOLDOWN_MS: "7000"
+          COOLDOWN_MS: "6000"
           MAX_RUNTIME_MS: "3300000"

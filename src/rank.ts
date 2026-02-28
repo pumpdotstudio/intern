@@ -3,19 +3,20 @@
 /*                                                                    */
 /*  Loops continuously across market tabs, fetching DataPoint         */
 /*  snapshots, running deterministic analysis, and submitting XP.     */
-/*  Designed to run as a long-lived GHA job that self-terminates      */
-/*  before the next scheduled run.                                    */
+/*  Pipelined: prefetches next DataPoint during cooldown to maximize  */
+/*  throughput against the 10/min server limit.                       */
 /*                                                                    */
 /*  Env:                                                              */
 /*    PUMP_STUDIO_API_KEY  — required                                 */
-/*    RANK_COUNT           — tokens per tab per cycle (default: 20)   */
-/*    COOLDOWN_MS          — delay between submissions (default: 7s)  */
+/*    RANK_COUNT           — tokens per tab per cycle (default: 50)   */
+/*    COOLDOWN_MS          — delay between submissions (default: 6s)  */
 /*    MAX_RUNTIME_MS       — self-terminate after this (default: 55m) */
 /*    TABS                 — comma-separated tabs (default: all tabs) */
 /* ================================================================== */
 
 import { PumpStudioClient } from "./client.js";
 import { analyze } from "./analyzer.js";
+import type { DataPoint, MarketToken } from "./types.js";
 
 const API_KEY = process.env.PUMP_STUDIO_API_KEY;
 if (!API_KEY) {
@@ -23,8 +24,8 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const RANK_COUNT = Number(process.env.RANK_COUNT) || 20;
-const COOLDOWN_MS = Number(process.env.COOLDOWN_MS) || 7_000;
+const RANK_COUNT = Number(process.env.RANK_COUNT) || 50;
+const COOLDOWN_MS = Number(process.env.COOLDOWN_MS) || 6_000;
 const MAX_RUNTIME_MS = Number(process.env.MAX_RUNTIME_MS) || 55 * 60 * 1000;
 const TABS_ENV = process.env.TABS || "all,live,new,graduated";
 const TABS = TABS_ENV.split(",").map((t) => t.trim()) as Array<"all" | "live" | "new" | "graduated">;
@@ -34,7 +35,7 @@ const startTime = Date.now();
 
 /* Track recently analyzed mints to avoid wasting cooldowns */
 const recentMints = new Map<string, number>();
-const MINT_REUSE_COOLDOWN_MS = 90_000;
+const MINT_REUSE_COOLDOWN_MS = 120_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -58,6 +59,15 @@ function pruneRecent() {
   }
 }
 
+/* Prefetch a DataPoint, return null on failure instead of throwing */
+async function safeFetchDP(mint: string): Promise<DataPoint | null> {
+  try {
+    return await client.getDataPoint(mint);
+  } catch {
+    return null;
+  }
+}
+
 async function rankTab(tab: string, count: number, cycle: number): Promise<{ submitted: number; xp: number; errors: number }> {
   let submitted = 0;
   let xp = 0;
@@ -65,7 +75,7 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
 
   console.log(`\n→ [${elapsed()}] CYCLE ${cycle} — tab "${tab}" — fetching ${count} tokens...`);
 
-  let tokens;
+  let tokens: MarketToken[];
   try {
     tokens = await client.getMarket(tab as any, count);
   } catch (err: any) {
@@ -83,6 +93,11 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
   const fresh = tokens.filter((t) => !recentMints.has(t.mint));
   console.log(`  found ${tokens.length} tokens (${fresh.length} fresh)\n`);
 
+  if (fresh.length === 0) return { submitted, xp, errors };
+
+  /* Pipeline: kick off first fetch immediately */
+  let pendingDP: Promise<DataPoint | null> = safeFetchDP(fresh[0]!.mint);
+
   for (let i = 0; i < fresh.length; i++) {
     if (shouldStop()) {
       console.log(`  ⏰ runtime limit reached, stopping mid-tab`);
@@ -92,15 +107,23 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
     const token = fresh[i]!;
     const label = `  [${tab}:${i + 1}/${fresh.length}]`;
 
-    try {
-      /* Fetch DataPoint */
-      const dp = await client.getDataPoint(token.mint);
+    /* Await the prefetched DataPoint */
+    const dp = await pendingDP;
 
-      /* Analyze */
+    if (!dp) {
+      errors++;
+      console.log(`${label} ✗ ${token.symbol ?? token.mint.slice(0, 8)} — fetch failed`);
+      /* Still prefetch next */
+      if (i + 1 < fresh.length) pendingDP = safeFetchDP(fresh[i + 1]!.mint);
+      continue;
+    }
+
+    try {
+      /* Analyze (instant, CPU only) */
       const result = analyze(dp);
 
-      /* Submit */
-      const submission = await client.submitAnalysis({
+      /* Submit + prefetch next + cooldown — all in parallel */
+      const submitPromise = client.submitAnalysis({
         mint: token.mint,
         sentiment: result.sentiment,
         score: result.score,
@@ -109,6 +132,13 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
         quant: result.quant,
       });
 
+      /* Start prefetching next token's DataPoint during cooldown */
+      if (i + 1 < fresh.length) {
+        pendingDP = safeFetchDP(fresh[i + 1]!.mint);
+      }
+
+      /* Wait for submission result */
+      const submission = await submitPromise;
       recentMints.set(token.mint, Date.now());
 
       if (submission.ok) {
@@ -126,9 +156,11 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
     } catch (err: any) {
       errors++;
       console.log(`${label} ✗ ${token.symbol ?? token.mint.slice(0, 8)} — ${err.message}`);
+      /* Still prefetch next */
+      if (i + 1 < fresh.length) pendingDP = safeFetchDP(fresh[i + 1]!.mint);
     }
 
-    /* Cooldown — respect 10/min server limit */
+    /* Cooldown — server enforces 10/min, 6s = exactly 10/min */
     if (i < fresh.length - 1 && !shouldStop()) {
       await sleep(COOLDOWN_MS);
     }
@@ -138,10 +170,11 @@ async function rankTab(tab: string, count: number, cycle: number): Promise<{ sub
 }
 
 async function run() {
-  console.log(`☕ intern — continuous quant ranker`);
+  console.log(`☕ intern — continuous quant ranker (pipelined)`);
   console.log(`   tabs: [${TABS.join(", ")}]`);
   console.log(`   tokens/tab: ${RANK_COUNT} | cooldown: ${COOLDOWN_MS / 1000}s`);
   console.log(`   max runtime: ${MAX_RUNTIME_MS / 60_000}m`);
+  console.log(`   theoretical max: ${Math.floor((MAX_RUNTIME_MS / 1000 / (COOLDOWN_MS / 1000)) * 24)}/day`);
   console.log(`   started: ${new Date().toISOString()}\n`);
 
   let totalSubmitted = 0;
@@ -162,12 +195,16 @@ async function run() {
     }
 
     if (!shouldStop()) {
-      /* Brief pause between full cycles to let fresh tokens appear */
-      console.log(`\n─── cycle ${cycle} complete | ${totalSubmitted} submitted | +${totalXp} XP | ${totalErrors} errors | ${elapsed()} ───`);
-      console.log(`    pausing 30s before next cycle...\n`);
-      await sleep(30_000);
+      const rate = totalSubmitted / ((Date.now() - startTime) / 60_000);
+      console.log(`\n─── cycle ${cycle} | ${totalSubmitted} submitted | +${totalXp} XP | ${rate.toFixed(1)}/min | ${elapsed()} ───`);
+      console.log(`    pausing 10s before next cycle...\n`);
+      await sleep(10_000);
     }
   }
+
+  const runtimeMin = (Date.now() - startTime) / 60_000;
+  const rate = totalSubmitted / runtimeMin;
+  const projected = Math.floor(rate * 60 * 24);
 
   console.log(`\n${"═".repeat(60)}`);
   console.log(`  ☕ intern — session complete`);
@@ -176,6 +213,8 @@ async function run() {
   console.log(`  submitted:  ${totalSubmitted}`);
   console.log(`  XP earned:  +${totalXp}`);
   console.log(`  errors:     ${totalErrors}`);
+  console.log(`  rate:       ${rate.toFixed(1)}/min`);
+  console.log(`  projected:  ~${projected}/day at this rate`);
   console.log(`${"═".repeat(60)}\n`);
 }
 

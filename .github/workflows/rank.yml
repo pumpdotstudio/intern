@@ -7,10 +7,6 @@ on:
         description: "Tokens per tab per cycle"
         required: false
         default: "50"
-      tabs:
-        description: "Comma-separated tabs (all,live,new,graduated)"
-        required: false
-        default: "all,live,new,graduated"
       runtime:
         description: "Max runtime in minutes"
         required: false
@@ -24,9 +20,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  agent-1:
+  rank:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Core agents (broad market) ──
+          - agent: blade
+            secret: PUMP_STUDIO_API_KEY
+            tabs: "all,live"
+          - agent: intern
+            secret: PUMP_STUDIO_API_KEY_2
+            tabs: "new,graduated"
+
+          # ── Allah fleet (pre-bonded focus) ──
+          - agent: zerebro
+            secret: AGENT_ZEREBRO
+            tabs: "new,all"
+          - agent: wojak
+            secret: AGENT_WOJAK
+            tabs: "new,live"
+          - agent: ava
+            secret: AGENT_AVA
+            tabs: "new,graduated"
+          - agent: copperinu
+            secret: AGENT_COPPERINU
+            tabs: "all,graduated"
 
     steps:
       - uses: actions/checkout@v4
@@ -38,36 +60,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run agent 1 (blade)
+      - name: Run ${{ matrix.agent }}
         run: npm run rank
         env:
-          PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY }}
+          PUMP_STUDIO_API_KEY: ${{ secrets[matrix.secret] }}
           RANK_COUNT: ${{ inputs.count || '50' }}
-          TABS: "all,live"
-          COOLDOWN_MS: "6000"
-          MAX_RUNTIME_MS: "3300000"
-          PAPER_TRADE: "1"
-
-  agent-2:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run agent 2 (intern)
-        run: npm run rank
-        env:
-          PUMP_STUDIO_API_KEY: ${{ secrets.PUMP_STUDIO_API_KEY_2 }}
-          RANK_COUNT: ${{ inputs.count || '50' }}
-          TABS: "new,graduated"
+          TABS: ${{ matrix.tabs }}
           COOLDOWN_MS: "6000"
           MAX_RUNTIME_MS: "3300000"
           PAPER_TRADE: "1"
